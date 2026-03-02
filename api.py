@@ -83,6 +83,9 @@ class Transferencia(BaseModel):
     id_origem: int
     id_destino: int
     valor: float
+@app.get("/bem-vindo/{nome}")
+def bem_vindo(nome: str):
+    return {"mensagem": f"Olá {nome}, bem-vindo ao banco!"}
 
 @app.post("/transferir")
 def transferir(transferencia: Transferencia):
