@@ -1,20 +1,29 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import sqlite3
+import psycopg2
+import os
 
 app = FastAPI()
 
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
 def conectar():
-    con = sqlite3.connect("banco.db")
-    con.execute("""
+    return psycopg2.connect(DATABASE_URL)
+
+def criar_tabela():
+    con = conectar()
+    cur = con.cursor()
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS clientes (
-            id    INTEGER PRIMARY KEY AUTOINCREMENT,
+            id    SERIAL PRIMARY KEY,
             nome  TEXT,
             saldo REAL
         )
     """)
     con.commit()
-    return con
+    con.close()
+
+criar_tabela()
 
 @app.get("/")
 def inicio():
@@ -28,6 +37,7 @@ def listar_clientes():
     clientes = cur.fetchall()
     con.close()
     return {"clientes": clientes}
+
 class Cliente(BaseModel):
     nome: str
     saldo: float
@@ -36,78 +46,8 @@ class Cliente(BaseModel):
 def criar_cliente(cliente: Cliente):
     con = conectar()
     cur = con.cursor()
-    cur.execute("""
-        INSERT INTO clientes (nome, saldo)
-        VALUES (?, ?)
-    """, (cliente.nome, cliente.saldo))
+    cur.execute("INSERT INTO clientes (nome, saldo) VALUES (%s, %s)",
+                (cliente.nome, cliente.saldo))
     con.commit()
     con.close()
     return {"mensagem": f"Cliente {cliente.nome} criado!"}
-class Deposito(BaseModel):
-    id_cliente: int
-    valor: float
-
-@app.post("/depositar")
-def depositar(deposito: Deposito):
-    con = conectar()
-    cur = con.cursor()
-    cur.execute("UPDATE clientes SET saldo = saldo + ? WHERE id = ?",
-                (deposito.valor, deposito.id_cliente))
-    con.commit()
-    con.close()
-    return {"mensagem": f"Depositado: {deposito.valor}"}
-class Levantamento(BaseModel):
-    id_cliente: int
-    valor: float
-
-@app.post("/levantar")
-def levantar(levantamento: Levantamento):
-    con = conectar()
-    cur = con.cursor()
-    cur.execute("SELECT saldo FROM clientes WHERE id = ?",
-                (levantamento.id_cliente,))
-    cliente = cur.fetchone()
-
-    if not cliente:
-        return {"erro": "Cliente não encontrado!"}
-
-    if levantamento.valor > cliente[0]:
-        return {"erro": "Saldo insuficiente!"}
-
-    cur.execute("UPDATE clientes SET saldo = saldo - ? WHERE id = ?",
-                (levantamento.valor, levantamento.id_cliente))
-    con.commit()
-    con.close()
-    return {"mensagem": f"Levantado: {levantamento.valor}"}
-class Transferencia(BaseModel):
-    id_origem: int
-    id_destino: int
-    valor: float
-@app.get("/bem-vindo/{nome}")
-def bem_vindo(nome: str):
-    return {"mensagem": f"Olá {nome}, bem-vindo ao banco!"}
-
-@app.post("/transferir")
-def transferir(transferencia: Transferencia):
-    con = conectar()
-    cur = con.cursor()
-
-    cur.execute("SELECT saldo FROM clientes WHERE id = ?",
-                (transferencia.id_origem,))
-    origem = cur.fetchone()
-
-    if not origem:
-        return {"erro": "Cliente origem não encontrado!"}
-
-    if transferencia.valor > origem[0]:
-        return {"erro": "Saldo insuficiente!"}
-
-    cur.execute("UPDATE clientes SET saldo = saldo - ? WHERE id = ?",
-                (transferencia.valor, transferencia.id_origem))
-
-    cur.execute("UPDATE clientes SET saldo = saldo + ? WHERE id = ?",
-                (transferencia.valor, transferencia.id_destino))
-
-    con.commit()
-    con.close()
-    return {"mensagem": f"Transferido: {transferencia.valor}"}
