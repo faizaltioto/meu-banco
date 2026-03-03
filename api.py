@@ -1,6 +1,5 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, WebSocket
 from fastapi.responses import FileResponse
-
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from jose import JWTError, jwt
@@ -17,10 +16,9 @@ oauth2 = OAuth2PasswordBearer(tokenUrl="login")
 def encriptar_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
 
-# utilizadores de teste
 utilizadores = {
-    "faizal": {
-        "nome": "faizal",
+    "admin": {
+        "nome": "admin",
         "senha": encriptar_senha("1234")
     }
 }
@@ -50,12 +48,25 @@ def conectar():
             saldo REAL
         )
     """)
+    conexao.execute("""
+        CREATE TABLE IF NOT EXISTS transaccoes (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo      TEXT,
+            valor     REAL,
+            cliente   TEXT,
+            data      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conexao.commit()
     return conexao
 
 @app.get("/")
 def inicio():
     return {"mensagem": "Bem-vindo ao Banco!"}
+
+@app.get("/pagina")
+def pagina():
+    return FileResponse("index.html")
 
 @app.post("/login")
 def login(formulario: OAuth2PasswordRequestForm = Depends()):
@@ -79,12 +90,9 @@ def listar_clientes(utilizador: str = Depends(obter_utilizador_actual)):
 class Cliente(BaseModel):
     nome: str
     saldo: float
-@app.get("/pagina")
-def pagina():
-    return FileResponse("index.html")
 
 @app.post("/clientes/criar")
-def criar_cliente(cliente: Cliente):
+def criar_cliente(cliente: Cliente, utilizador: str = Depends(obter_utilizador_actual)):
     conexao = conectar()
     cursor = conexao.cursor()
     cursor.execute(
@@ -94,3 +102,83 @@ def criar_cliente(cliente: Cliente):
     conexao.commit()
     conexao.close()
     return {"mensagem": f"Cliente {cliente.nome} criado!"}
+
+class Deposito(BaseModel):
+    id_cliente: int
+    valor: float
+
+@app.post("/depositar")
+def depositar(deposito: Deposito, utilizador: str = Depends(obter_utilizador_actual)):
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute("SELECT nome FROM clientes WHERE id = ?", (deposito.id_cliente,))
+    cliente = cursor.fetchone()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado!")
+    cursor.execute("UPDATE clientes SET saldo = saldo + ? WHERE id = ?",
+                (deposito.valor, deposito.id_cliente))
+    cursor.execute("INSERT INTO transaccoes (tipo, valor, cliente) VALUES (?, ?, ?)",
+                ("depósito", deposito.valor, cliente[0]))
+    conexao.commit()
+    conexao.close()
+    return {"mensagem": f"Depositado MZN {deposito.valor}!"}
+
+class Levantamento(BaseModel):
+    id_cliente: int
+    valor: float
+
+@app.post("/levantar")
+def levantar(levantamento: Levantamento, utilizador: str = Depends(obter_utilizador_actual)):
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute("SELECT nome, saldo FROM clientes WHERE id = ?", (levantamento.id_cliente,))
+    cliente = cursor.fetchone()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado!")
+    if levantamento.valor > cliente[1]:
+        raise HTTPException(status_code=400, detail="Saldo insuficiente!")
+    cursor.execute("UPDATE clientes SET saldo = saldo - ? WHERE id = ?",
+                (levantamento.valor, levantamento.id_cliente))
+    cursor.execute("INSERT INTO transaccoes (tipo, valor, cliente) VALUES (?, ?, ?)",
+                ("levantamento", levantamento.valor, cliente[0]))
+    conexao.commit()
+    conexao.close()
+    return {"mensagem": f"Levantado MZN {levantamento.valor}!"}
+
+class Transferencia(BaseModel):
+    id_origem: int
+    id_destino: int
+    valor: float
+
+@app.post("/transferir")
+def transferir(transferencia: Transferencia, utilizador: str = Depends(obter_utilizador_actual)):
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute("SELECT nome, saldo FROM clientes WHERE id = ?", (transferencia.id_origem,))
+    origem = cursor.fetchone()
+    if not origem:
+        raise HTTPException(status_code=404, detail="Cliente origem não encontrado!")
+    if transferencia.valor > origem[1]:
+        raise HTTPException(status_code=400, detail="Saldo insuficiente!")
+    cursor.execute("SELECT nome FROM clientes WHERE id = ?", (transferencia.id_destino,))
+    destino = cursor.fetchone()
+    if not destino:
+        raise HTTPException(status_code=404, detail="Cliente destino não encontrado!")
+    cursor.execute("UPDATE clientes SET saldo = saldo - ? WHERE id = ?",
+                (transferencia.valor, transferencia.id_origem))
+    cursor.execute("UPDATE clientes SET saldo = saldo + ? WHERE id = ?",
+                (transferencia.valor, transferencia.id_destino))
+    cursor.execute("INSERT INTO transaccoes (tipo, valor, cliente) VALUES (?, ?, ?)",
+                ("transferência", transferencia.valor, origem[0]))
+    conexao.commit()
+    conexao.close()
+    return {"mensagem": f"Transferido MZN {transferencia.valor} para {destino[0]}!"}
+
+@app.get("/transaccoes")
+def listar_transaccoes(utilizador: str = Depends(obter_utilizador_actual)):
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute("SELECT * FROM transaccoes ORDER BY data DESC")
+    lista = cursor.fetchall()
+    conexao.close()
+    return {"transaccoes": lista}
