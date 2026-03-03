@@ -1,8 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.responses import FileResponse
+
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import hashlib
 import sqlite3
 
 app = FastAPI()
@@ -10,18 +12,21 @@ app = FastAPI()
 CHAVE_SECRETA = "minha-chave-secreta-123"
 ALGORITMO = "HS256"
 
-contexto_senha = CryptContext(schemes=["bcrypt"])
 oauth2 = OAuth2PasswordBearer(tokenUrl="login")
 
+def encriptar_senha(senha):
+    return hashlib.sha256(senha.encode()).hexdigest()
+
+# utilizadores de teste
 utilizadores = {
     "faizal": {
         "nome": "faizal",
-        "senha": contexto_senha.hash("1234")
+        "senha": encriptar_senha("1234")
     }
 }
 
 def verificar_senha(senha, senha_encriptada):
-    return contexto_senha.verify(senha, senha_encriptada)
+    return encriptar_senha(senha) == senha_encriptada
 
 def criar_token(dados: dict):
     return jwt.encode(dados, CHAVE_SECRETA, algorithm=ALGORITMO)
@@ -74,6 +79,9 @@ def listar_clientes(utilizador: str = Depends(obter_utilizador_actual)):
 class Cliente(BaseModel):
     nome: str
     saldo: float
+@app.get("/pagina")
+def pagina():
+    return FileResponse("index.html")
 
 @app.post("/clientes/criar")
 def criar_cliente(cliente: Cliente):

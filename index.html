@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Meu Banco</title>
+    <style>
+        body {
+            background-color: #1a1a2e;
+            color: white;
+            font-family: Arial;
+            text-align: center;
+        }
+
+        h1 {
+            color: #00d4ff;
+            font-size: 40px;
+        }
+
+        input {
+            padding: 10px;
+            margin: 10px;
+            border-radius: 5px;
+            border: none;
+            font-size: 16px;
+            width: 250px;
+        }
+
+        button {
+            background-color: #00d4ff;
+            color: black;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        .caixa {
+            background-color: #16213e;
+            padding: 30px;
+            border-radius: 10px;
+            width: 300px;
+            margin: 50px auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="caixa">
+        <h1>Meu Banco</h1>
+        <br><br>
+<button onclick="ver_clientes()">Ver Clientes</button>
+<div id="lista_clientes"></div>
+       <input id="utilizador" type="text" placeholder="Nome de utilizador">
+<input id="senha" type="password" placeholder="Senha">
+<button onclick="fazer_login()">Entrar</button>
+        
+    </div>
+    <script>
+    async function fazer_login() {
+        const utilizador = document.getElementById("utilizador").value
+        const senha = document.getElementById("senha").value
+
+        const resposta = await fetch("http://10.124.240.124:8000/login", {
+            method: "POST",
+            headers: {"Content-Type": "application/x-www-form-urlencoded"},
+            body: `username=${utilizador}&password=${senha}`
+        })
+
+        const dados = await resposta.json()
+
+        if (dados.access_token) {
+            alert("Login feito com sucesso!")
+            localStorage.setItem("token", dados.access_token)
+        } else {
+            alert("Erro no login!")
+        }
+    }
+  async function ver_clientes() {
+    const token = localStorage.getItem("token")
+
+    const resposta = await fetch("http://10.124.240.124:8000/clientes", {
+        headers: {"Authorization": `Bearer ${token}`}
+    })
+
+    const dados = await resposta.json()
+    const lista = document.getElementById("lista_clientes")
+    lista.innerHTML = ""
+
+    dados.clientes.forEach(cliente => {
+        lista.innerHTML += `<p>${cliente[1]} → MZN ${cliente[2]}</p>`
+    })
+}
+</script>
+</body>
+
+</html>
