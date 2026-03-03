@@ -1,29 +1,20 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import psycopg2
-import os
+import sqlite3
 
 app = FastAPI()
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
 def conectar():
-    return psycopg2.connect(DATABASE_URL)
-
-def criar_tabela():
-    con = conectar()
-    cur = con.cursor()
-    cur.execute("""
+    conexao = sqlite3.connect("banco.db")
+    conexao.execute("""
         CREATE TABLE IF NOT EXISTS clientes (
-            id    SERIAL PRIMARY KEY,
+            id    INTEGER PRIMARY KEY AUTOINCREMENT,
             nome  TEXT,
             saldo REAL
         )
     """)
-    con.commit()
-    con.close()
-
-criar_tabela()
+    conexao.commit()
+    return conexao
 
 @app.get("/")
 def inicio():
@@ -31,12 +22,12 @@ def inicio():
 
 @app.get("/clientes")
 def listar_clientes():
-    con = conectar()
-    cur = con.cursor()
-    cur.execute("SELECT * FROM clientes")
-    clientes = cur.fetchall()
-    con.close()
-    return {"clientes": clientes}
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute("SELECT * FROM clientes")
+    lista_clientes = cursor.fetchall()
+    conexao.close()
+    return {"clientes": lista_clientes}
 
 class Cliente(BaseModel):
     nome: str
@@ -44,10 +35,12 @@ class Cliente(BaseModel):
 
 @app.post("/clientes/criar")
 def criar_cliente(cliente: Cliente):
-    con = conectar()
-    cur = con.cursor()
-    cur.execute("INSERT INTO clientes (nome, saldo) VALUES (%s, %s)",
-                (cliente.nome, cliente.saldo))
-    con.commit()
-    con.close()
+    conexao = conectar()
+    cursor = conexao.cursor()
+    cursor.execute(
+        "INSERT INTO clientes (nome, saldo) VALUES (?, ?)",
+        (cliente.nome, cliente.saldo)
+    )
+    conexao.commit()
+    conexao.close()
     return {"mensagem": f"Cliente {cliente.nome} criado!"}
